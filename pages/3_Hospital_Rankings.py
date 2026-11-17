@@ -13,6 +13,10 @@ import plotly.express as px
 
 from utils.data_loader import (
     load_hospital_data,
+    load_hospitals,
+    load_hospital_procedure_data,
+    get_procedure_dataframe,
+    get_procedure_feasibility_defaults,
     filter_hospitals,
     CRITERIA_COLUMNS,
     CRITERIA_DISPLAY_NAMES,
@@ -42,7 +46,9 @@ st.markdown("---")
 
 # Load hospital dataset
 try:
-    raw_df = load_hospital_data()
+    hospital_df = load_hospital_data()
+    hospitals_meta_df = load_hospitals()
+    hosp_proc_df = load_hospital_procedure_data()
 except Exception as e:
     st.error(f"Error loading hospital data: {e}")
     st.stop()
@@ -56,13 +62,22 @@ weights = st.session_state["ahp_weights"]
 criteria_types_list = [CRITERIA_TYPES[c] for c in CRITERIA_COLUMNS]
 
 # Patient profile constraints if set
+target_proc = st.session_state.get("patient_profile", {}).get("procedure_id", "KNEE01")
+proc_defaults = get_procedure_feasibility_defaults(target_proc)
 profile = st.session_state.get("patient_profile", {
     "selected_countries": list(TARGET_COUNTRIES),
-    "max_budget": 50000,
-    "max_waiting_time": 20,
+    "max_budget": proc_defaults["max_budget"],
+    "max_waiting_time": proc_defaults["max_waiting_time"],
     "min_quality": 1,
     "archetype": "Illustrative Default",
+    "procedure_id": target_proc,
 })
+
+# Retrieve procedure-specific DataFrame
+try:
+    raw_df = get_procedure_dataframe(target_proc, hosp_proc_df, hospitals_meta_df, hospital_df)
+except Exception:
+    raw_df = hospital_df
 
 # Sidebar or Top Filters
 with st.sidebar:
@@ -78,7 +93,7 @@ with st.sidebar:
     filter_budget = st.slider(
         "Max Total Budget (USD)",
         min_value=5000,
-        max_value=50000,
+        max_value=75000,
         value=int(profile.get("max_budget", 50000)),
         step=1000,
         help="Combined procedure and travel/accommodation cost.",
@@ -87,8 +102,8 @@ with st.sidebar:
     filter_wait = st.slider(
         "Max Waiting Time (Days)",
         min_value=1,
-        max_value=20,
-        value=int(profile.get("max_waiting_time", 20)),
+        max_value=60,
+        value=int(profile.get("max_waiting_time", 30)),
         step=1,
     )
 
@@ -115,7 +130,12 @@ filtered_data = filter_hospitals(
 )
 
 if filtered_data.empty:
-    st.error("No hospitals match the selected filter criteria. Please broaden your budget, wait time, or country filters.")
+    rec_defaults = get_procedure_feasibility_defaults(target_proc)
+    st.error(f"No candidate hospitals match active feasibility filters for {target_proc}.")
+    if st.button(f"🔄 Apply Recommended Limits (${rec_defaults['max_budget']:,} USD, {rec_defaults['max_waiting_time']}d)"):
+        st.session_state["patient_profile"]["max_budget"] = rec_defaults["max_budget"]
+        st.session_state["patient_profile"]["max_waiting_time"] = rec_defaults["max_waiting_time"]
+        st.rerun()
     st.stop()
 
 # Execute TOPSIS ranking

@@ -8,7 +8,7 @@ import {
   TOPSISResult,
 } from '@/types/dss';
 import * as api from '@/services/api';
-import { DSSContext, DEFAULT_PROFILE, PatientProfile } from './DSSContext';
+import { DSSContext, DEFAULT_PROFILE, PatientProfile, getProcedureFeasibilityDefaults } from './DSSContext';
 
 export const DSSProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [meta, setMeta] = useState<SystemMeta | null>(null);
@@ -93,12 +93,19 @@ export const DSSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
   }, []);
 
-  // Set selected procedure and refresh data with race condition protection
+  // Set selected procedure and refresh data with procedure-aware defaults and race condition protection
   const setSelectedProcedureId = useCallback(
     async (newId: string) => {
       const reqId = ++procedureReqIdRef.current;
       setSelectedProcedureIdState(newId);
-      const updatedProfile = { ...profile, procedure_id: newId };
+      
+      const defaults = getProcedureFeasibilityDefaults(newId);
+      const updatedProfile: PatientProfile = {
+        ...profile,
+        procedure_id: newId,
+        max_budget: defaults.max_budget,
+        max_waiting_time: defaults.max_waiting_time,
+      };
       setProfile(updatedProfile);
       setIsCalculating(true);
       try {
@@ -260,6 +267,23 @@ export const DSSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     [ahpResult, profile, selectedProcedureId]
   );
 
+  // One-click action to reset active thresholds to procedure-aware demonstration limits
+  const resetToProcedureDefaults = useCallback(
+    async (targetProcedureId?: string) => {
+      const procId = targetProcedureId || selectedProcedureId;
+      const defaults = getProcedureFeasibilityDefaults(procId);
+      const updatedProfile: PatientProfile = {
+        ...profile,
+        procedure_id: procId,
+        max_budget: defaults.max_budget,
+        max_waiting_time: defaults.max_waiting_time,
+      };
+      setProfile(updatedProfile);
+      await refreshRankings(undefined, updatedProfile, procId);
+    },
+    [profile, selectedProcedureId, refreshRankings]
+  );
+
   // Save profile and trigger updates
   const saveProfileAndRecalculate = useCallback(
     async (newProfile: PatientProfile) => {
@@ -326,6 +350,7 @@ export const DSSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         selectedProcedureId,
         selectedProcedure,
         setSelectedProcedureId,
+        resetToProcedureDefaults,
         ahpMatrix,
         setAhpMatrix,
         ahpResult,

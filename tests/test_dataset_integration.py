@@ -33,6 +33,8 @@ from utils.data_loader import (
     get_procedure_records,
     get_procedure_summary,
     get_procedure_dataframe,
+    filter_hospitals,
+    get_procedure_feasibility_defaults,
     load_hospital_data,
     validate_hospital_data,
     EXPECTED_PROCEDURES,
@@ -154,6 +156,101 @@ class TestDatasetFiles(unittest.TestCase):
             self.assertGreater(k09_cost, k01_cost, f"Revision knee {hid} should cost more than primary")
             # Revision waiting time must be longer than primary
             self.assertGreaterEqual(k09_recs[hid]["waiting_time_days"], k01_recs[hid]["waiting_time_days"])
+
+    def test_08_feasibility_thresholds_knee04_usa_and_international(self):
+        """Feasibility filtering for KNEE04 under various budget and waiting time bounds."""
+        h_df = load_hospitals()
+        hp_df = load_hospital_procedure_data()
+        k4_df = get_procedure_dataframe("KNEE04", hp_df, h_df)
+
+        # 1. USA alone at $50,000 budget and 30 days wait -> Cleveland Clinic (US02) qualifies
+        res_30d = filter_hospitals(k4_df, countries=["USA"], max_budget=50000, max_waiting_time=30, min_quality=10)
+        self.assertEqual(res_30d["hospital_id"].tolist(), ["US02"])
+        self.assertIn("Cleveland Clinic", res_30d["hospital_name"].tolist())
+
+        # 2. USA alone at $50,000 budget and 60 days wait -> US01, US02, US04 qualify; US03 excluded ($50,050 > $50,000)
+        res_60d = filter_hospitals(k4_df, countries=["USA"], max_budget=50000, max_waiting_time=60, min_quality=10)
+        self.assertEqual(set(res_60d["hospital_id"]), {"US01", "US02", "US04"})
+        self.assertNotIn("US03", res_60d["hospital_id"].tolist())
+
+        # 3. USA alone at >$50,050 budget (e.g. $75,000) and 60 days wait -> All 4 USA hospitals qualify
+        res_75k = filter_hospitals(k4_df, countries=["USA"], max_budget=75000, max_waiting_time=60, min_quality=10)
+        self.assertEqual(set(res_75k["hospital_id"]), {"US01", "US02", "US03", "US04"})
+
+        # 4. International filtering verification (India, Türkiye, Thailand)
+        in_res = filter_hospitals(k4_df, countries=["India"], max_budget=50000, max_waiting_time=30, min_quality=10)
+        self.assertEqual(len(in_res), 4)
+
+        tr_res = filter_hospitals(k4_df, countries=["Türkiye"], max_budget=50000, max_waiting_time=30, min_quality=10)
+        self.assertEqual(len(tr_res), 4)
+
+        th_res = filter_hospitals(k4_df, countries=["Thailand"], max_budget=50000, max_waiting_time=30, min_quality=10)
+        self.assertEqual(len(th_res), 4)
+
+    def test_09_procedure_aware_defaults_all_nine_procedures(self):
+        """Verify procedure-aware feasibility defaults and eligibility across all 9 procedures."""
+        h_df = load_hospitals()
+        hp_df = load_hospital_procedure_data()
+
+        primary_procedures = ["KNEE01", "KNEE02", "KNEE04", "KNEE06", "KNEE07", "KNEE08"]
+        robotic_procedures = ["KNEE03", "KNEE05"]
+        revision_procedures = ["KNEE09"]
+
+        # 1. Verify default values structure
+        for pid in primary_procedures:
+            defs = get_procedure_feasibility_defaults(pid)
+            self.assertEqual(defs["max_budget"], 55000)
+            self.assertEqual(defs["max_waiting_time"], 35)
+
+        for pid in robotic_procedures:
+            defs = get_procedure_feasibility_defaults(pid)
+            self.assertEqual(defs["max_budget"], 65000)
+            self.assertEqual(defs["max_waiting_time"], 45)
+
+        for pid in revision_procedures:
+            defs = get_procedure_feasibility_defaults(pid)
+            self.assertEqual(defs["max_budget"], 75000)
+            self.assertEqual(defs["max_waiting_time"], 60)
+
+        # 2. Verify eligibility under procedure-aware defaults for USA and all international countries
+        for pid, _ in REQUIRED_9_LABELS:
+            k_df = get_procedure_dataframe(pid, hp_df, h_df)
+            defs = get_procedure_feasibility_defaults(pid)
+
+            # India, Türkiye, Thailand must return exactly 4/4
+            for country in ["India", "Türkiye", "Thailand"]:
+                c_res = filter_hospitals(
+                    k_df,
+                    countries=[country],
+                    max_budget=defs["max_budget"],
+                    max_waiting_time=defs["max_waiting_time"],
+                    min_quality=10,
+                )
+                self.assertEqual(len(c_res), 4, f"{country} should have 4 qualifying hospitals for {pid}")
+
+            # USA must have suitable qualifying hospitals (at least 2-4) under its procedure-aware default
+            us_res = filter_hospitals(
+                k_df,
+                countries=["USA"],
+                max_budget=defs["max_budget"],
+                max_waiting_time=defs["max_waiting_time"],
+                min_quality=10,
+            )
+            self.assertGreaterEqual(len(us_res), 2, f"USA should have >= 2 qualifying hospitals for {pid} at defaults")
+
+            # Robotic and Revision must have all 4 USA hospitals qualifying under their defaults
+            if pid in ["KNEE03", "KNEE05", "KNEE09"]:
+                self.assertEqual(len(us_res), 4, f"{pid} should have all 4 USA hospitals qualifying under procedure-aware default")
+
+            # At maximized limits ($75,000 / 60d), all 4 USA hospitals must qualify across all 9 procedures
+            us_max = filter_hospitals(
+                k_df,
+                countries=["USA"],
+                max_budget=75000,
+                max_waiting_time=60,
+                min_quality=10,
+            )
+            self.assertEqual(len(us_max), 4, f"All 4 USA hospitals must qualify for {pid} at $75k/60d")
 
 
 class TestLiveApiEndpoints(unittest.TestCase):

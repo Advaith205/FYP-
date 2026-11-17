@@ -10,9 +10,14 @@ import pandas as pd
 
 from utils.data_loader import (
     load_hospital_data,
+    load_hospitals,
+    load_hospital_procedure_data,
+    get_procedure_dataframe,
     filter_hospitals,
     TARGET_COUNTRIES,
     SYNTHETIC_DATA_DISCLAIMER,
+    EXPECTED_PROCEDURES,
+    get_procedure_feasibility_defaults,
 )
 from utils.ahp import get_preset_archetype_matrix, calculate_weights
 
@@ -25,18 +30,22 @@ st.set_page_config(
 # Load dataset
 try:
     hospital_df = load_hospital_data()
+    hospitals_meta_df = load_hospitals()
+    hosp_proc_df = load_hospital_procedure_data()
 except Exception as e:
     st.error(f"Error loading hospital data: {e}")
     st.stop()
 
 # Initialize session state defaults if needed
 if "patient_profile" not in st.session_state:
+    k1_defaults = get_procedure_feasibility_defaults("KNEE01")
     st.session_state["patient_profile"] = {
         "selected_countries": list(TARGET_COUNTRIES),
-        "max_budget": 35000,
-        "max_waiting_time": 14,
+        "max_budget": k1_defaults["max_budget"],
+        "max_waiting_time": k1_defaults["max_waiting_time"],
         "min_quality": 10,
         "archetype": "Balanced",
+        "procedure_id": "KNEE01",
     }
 
 st.title("👤 Patient Preferences & Profile")
@@ -53,13 +62,23 @@ col_inputs, col_preview = st.columns([1, 1], gap="large")
 with col_inputs:
     st.markdown("### ⚙️ Clinical & Logistical Constraints")
 
-    # Procedure Confirmation
-    st.text_input(
-        "Target Procedure",
-        value="Knee Replacement Surgery (Total Arthroplasty)",
-        disabled=True,
-        help="The decision model is tailored to cross-border knee replacement surgery.",
+    # Procedure Selection
+    proc_options = {p["procedure_id"]: p["display_label"] for p in EXPECTED_PROCEDURES}
+    current_proc = st.session_state["patient_profile"].get("procedure_id", "KNEE01")
+    selected_proc_id = st.selectbox(
+        "Target Knee Procedure",
+        options=list(proc_options.keys()),
+        format_func=lambda x: f"{x} - {proc_options[x]}",
+        index=list(proc_options.keys()).index(current_proc) if current_proc in proc_options else 0,
+        help="Select one of the 9 knee procedure options.",
     )
+
+    if selected_proc_id != current_proc:
+        proc_defaults = get_procedure_feasibility_defaults(selected_proc_id)
+        st.session_state["patient_profile"]["procedure_id"] = selected_proc_id
+        st.session_state["patient_profile"]["max_budget"] = proc_defaults["max_budget"]
+        st.session_state["patient_profile"]["max_waiting_time"] = proc_defaults["max_waiting_time"]
+        st.rerun()
 
     # Destination Countries Filter
     selected_countries = st.multiselect(
@@ -77,7 +96,7 @@ with col_inputs:
     max_budget = st.slider(
         "Maximum Total Budget (USD)",
         min_value=5000,
-        max_value=50000,
+        max_value=75000,
         value=int(st.session_state["patient_profile"]["max_budget"]),
         step=1000,
         help="Maximum combined allowance for procedure cost and travel/accommodation.",
@@ -87,7 +106,7 @@ with col_inputs:
     max_wait = st.slider(
         "Maximum Acceptable Waiting Time (Days)",
         min_value=1,
-        max_value=20,
+        max_value=60,
         value=int(st.session_state["patient_profile"]["max_waiting_time"]),
         step=1,
         help="Maximum days between consultation approval and hospital admission.",
@@ -133,6 +152,7 @@ with col_inputs:
             "max_waiting_time": max_wait,
             "min_quality": min_quality,
             "archetype": selected_archetype,
+            "procedure_id": selected_proc_id,
         }
 
         # Pre-populate AHP matrix based on archetype
@@ -151,20 +171,31 @@ with col_inputs:
 with col_preview:
     st.markdown("### 📋 Matching Hospital Alternatives")
 
+    # Retrieve procedure-specific dataset
+    proc_df = get_procedure_dataframe(selected_proc_id, hosp_proc_df, hospitals_meta_df, hospital_df)
+
     # Filter hospitals based on user parameters
     matching_df = filter_hospitals(
-        hospital_df,
+        proc_df,
         countries=selected_countries,
         max_budget=max_budget,
         max_waiting_time=max_wait,
         min_quality=min_quality,
     )
 
-    total_count = len(hospital_df)
+    total_count = len(proc_df)
     match_count = len(matching_df)
 
     if match_count == 0:
-        st.warning("⚠️ No hospitals match the selected constraints. Consider raising your budget or waiting time threshold.")
+        rec_defaults = get_procedure_feasibility_defaults(selected_proc_id)
+        st.warning(
+            f"⚠️ No hospitals match the selected constraints for {proc_options[selected_proc_id]}. "
+            f"Active budget (${max_budget:,}) and waiting time ({max_wait}d) exclude all candidates in {', '.join(selected_countries)}."
+        )
+        if st.button(f"🔄 Apply Recommended Limits (${rec_defaults['max_budget']:,} USD, {rec_defaults['max_waiting_time']}d)"):
+            st.session_state["patient_profile"]["max_budget"] = rec_defaults["max_budget"]
+            st.session_state["patient_profile"]["max_waiting_time"] = rec_defaults["max_waiting_time"]
+            st.rerun()
     else:
         st.success(f"🎯 **{match_count} of {total_count} candidate hospitals** meet your feasibility constraints.")
 

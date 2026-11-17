@@ -18,6 +18,31 @@ export interface PatientProfile {
   procedure_id?: string;
 }
 
+export interface FeasibilityDefaults {
+  max_budget: number;
+  max_waiting_time: number;
+}
+
+export const PROCEDURE_FEASIBILITY_DEFAULTS: Record<string, FeasibilityDefaults> = {
+  // Primary procedures: $55,000 budget, 35 days max wait
+  KNEE01: { max_budget: 55000, max_waiting_time: 35 },
+  KNEE02: { max_budget: 55000, max_waiting_time: 35 },
+  KNEE04: { max_budget: 55000, max_waiting_time: 35 },
+  KNEE06: { max_budget: 55000, max_waiting_time: 35 },
+  KNEE07: { max_budget: 55000, max_waiting_time: 35 },
+  KNEE08: { max_budget: 55000, max_waiting_time: 35 },
+  // Robotic technique scenarios: $65,000 budget, 45 days max wait
+  KNEE03: { max_budget: 65000, max_waiting_time: 45 },
+  KNEE05: { max_budget: 65000, max_waiting_time: 45 },
+  // Revision procedure: $75,000 budget, 60 days max wait
+  KNEE09: { max_budget: 75000, max_waiting_time: 60 },
+};
+
+export function getProcedureFeasibilityDefaults(procedureId?: string): FeasibilityDefaults {
+  const cleanId = (procedureId || 'KNEE01').toUpperCase().trim();
+  return PROCEDURE_FEASIBILITY_DEFAULTS[cleanId] || { max_budget: 55000, max_waiting_time: 35 };
+}
+
 export interface DSSContextType {
   meta: SystemMeta | null;
   profile: PatientProfile;
@@ -26,6 +51,7 @@ export interface DSSContextType {
   selectedProcedureId: string;
   selectedProcedure: KneeProcedure | null;
   setSelectedProcedureId: (id: string) => Promise<void>;
+  resetToProcedureDefaults: (targetProcedureId?: string) => Promise<void>;
   ahpMatrix: number[][];
   setAhpMatrix: React.Dispatch<React.SetStateAction<number[][]>>;
   ahpResult: AHPResult | null;
@@ -48,8 +74,8 @@ export interface DSSContextType {
 
 export const DEFAULT_PROFILE: PatientProfile = {
   countries: ['India', 'Türkiye', 'Thailand', 'USA'],
-  max_budget: 35000,
-  max_waiting_time: 14,
+  max_budget: 55000,
+  max_waiting_time: 35,
   min_quality: 10,
   archetype: 'Balanced',
   procedure_id: 'KNEE01',

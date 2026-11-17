@@ -71,6 +71,30 @@ EXPECTED_PROCEDURES: List[Dict[str, str]] = [
     {"procedure_id": "KNEE09", "display_label": "Revision knee arthroplasty"},
 ]
 
+# Procedure-aware feasibility default thresholds
+PROCEDURE_FEASIBILITY_DEFAULTS: Dict[str, Dict[str, float]] = {
+    # Primary procedures: $55,000 budget, 35 days max wait
+    "KNEE01": {"max_budget": 55000, "max_waiting_time": 35},
+    "KNEE02": {"max_budget": 55000, "max_waiting_time": 35},
+    "KNEE04": {"max_budget": 55000, "max_waiting_time": 35},
+    "KNEE06": {"max_budget": 55000, "max_waiting_time": 35},
+    "KNEE07": {"max_budget": 55000, "max_waiting_time": 35},
+    "KNEE08": {"max_budget": 55000, "max_waiting_time": 35},
+    # Robotic technique scenarios: $65,000 budget, 45 days max wait
+    "KNEE03": {"max_budget": 65000, "max_waiting_time": 45},
+    "KNEE05": {"max_budget": 65000, "max_waiting_time": 45},
+    # Revision procedure: $75,000 budget, 60 days max wait
+    "KNEE09": {"max_budget": 75000, "max_waiting_time": 60},
+}
+
+
+def get_procedure_feasibility_defaults(procedure_id: str) -> Dict[str, float]:
+    """Retrieve procedure-aware default feasibility bounds (budget and waiting time)."""
+    clean_id = (procedure_id or "KNEE01").upper().strip()
+    return PROCEDURE_FEASIBILITY_DEFAULTS.get(
+        clean_id, {"max_budget": 55000, "max_waiting_time": 35}
+    )
+
 # Canonical 6 criteria column names
 CRITERIA_COLUMNS: List[str] = [
     "procedure_cost_usd",
@@ -296,8 +320,8 @@ def filter_hospitals(
     Args:
         df: Hospital DataFrame.
         countries: Optional list of country names to retain.
-        max_budget: Optional maximum total package cost (procedure + travel).
-        max_waiting_time: Optional maximum acceptable waiting time in days.
+        max_budget: Optional maximum total package cost (procedure + travel, supports up to $75,000).
+        max_waiting_time: Optional maximum acceptable waiting time in days (supports up to 60 days).
         min_quality: Optional minimum acceptable hospital quality score (1-15).
 
     Returns:
@@ -597,6 +621,8 @@ def get_procedure_summary(
         else None
     )
 
+    feasibility_defaults = get_procedure_feasibility_defaults(clean_id)
+
     return {
         "procedure_id": proc["procedure_id"],
         "id": proc["procedure_id"],
@@ -617,4 +643,6 @@ def get_procedure_summary(
         "ranking_eligible": is_eligible,
         "ranking_eligible_count": eligible_count if eligible_count > 0 else 16,
         "data_availability_message": SYNTHETIC_DATA_DISCLAIMER,
+        "default_max_budget": feasibility_defaults["max_budget"],
+        "default_max_waiting_time": feasibility_defaults["max_waiting_time"],
     }

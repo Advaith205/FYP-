@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useDSS, PatientProfile } from '@/context/DSSContext';
+import { useDSS, PatientProfile, getProcedureFeasibilityDefaults } from '@/context/DSSContext';
 import {
   Check,
   Sliders,
@@ -11,6 +11,8 @@ import {
   ArrowRight,
   Activity,
   Info,
+  RotateCcw,
+  AlertTriangle,
 } from 'lucide-react';
 
 interface PreferencesModuleProps {
@@ -79,6 +81,15 @@ export const PreferencesModule: React.FC<PreferencesModuleProps> = ({ onNavigate
   const [minQuality, setMinQuality] = useState<number>(profile.min_quality);
   const [archetype, setArchetype] = useState<string>(profile.archetype);
   const [saveSuccess, setSaveSuccess] = useState<boolean>(false);
+
+  // Synchronize local slider state with profile when it updates
+  React.useEffect(() => {
+    setCountries(profile.countries);
+    setMaxBudget(profile.max_budget);
+    setMaxWait(profile.max_waiting_time);
+    setMinQuality(profile.min_quality);
+    setArchetype(profile.archetype);
+  }, [profile]);
 
   const isDemonstration = true;
 
@@ -310,7 +321,7 @@ export const PreferencesModule: React.FC<PreferencesModuleProps> = ({ onNavigate
               <input
                 type="range"
                 min={5000}
-                max={50000}
+                max={75000}
                 step={1000}
                 value={maxBudget}
                 onChange={(e) => setMaxBudget(Number(e.target.value))}
@@ -318,7 +329,7 @@ export const PreferencesModule: React.FC<PreferencesModuleProps> = ({ onNavigate
               />
               <div className="flex justify-between text-xs text-slate-400">
                 <span>$5,000 (Low-Cost)</span>
-                <span>$50,000 (Domestic US Cap)</span>
+                <span>$75,000 (Domestic US Cap)</span>
               </div>
             </div>
 
@@ -336,7 +347,7 @@ export const PreferencesModule: React.FC<PreferencesModuleProps> = ({ onNavigate
               <input
                 type="range"
                 min={1}
-                max={20}
+                max={60}
                 step={1}
                 value={maxWait}
                 onChange={(e) => setMaxWait(Number(e.target.value))}
@@ -344,7 +355,7 @@ export const PreferencesModule: React.FC<PreferencesModuleProps> = ({ onNavigate
               />
               <div className="flex justify-between text-xs text-slate-400">
                 <span>1 Day (Immediate)</span>
-                <span>20 Days (Standard elective window)</span>
+                <span>60 Days (Elective / Domestic US)</span>
               </div>
             </div>
 
@@ -457,8 +468,30 @@ export const PreferencesModule: React.FC<PreferencesModuleProps> = ({ onNavigate
 
             {/* Feasibility Alert */}
             {matchingHospitals.length === 0 ? (
-              <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs">
-                ⚠️ No hospitals match these strict constraints. Consider increasing budget cap, waiting time, or quality threshold.
+              <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs space-y-2.5">
+                <div className="font-semibold flex items-center gap-1.5 text-amber-950">
+                  <AlertTriangle size={15} className="text-amber-600 shrink-0" />
+                  <span>No hospitals match active constraints for {selectedProcedure?.display_label || selectedProcedureId}.</span>
+                </div>
+                <p className="text-slate-600 leading-relaxed font-light">
+                  Active threshold cap of <strong>${maxBudget.toLocaleString()} USD</strong> and <strong>{maxWait} days</strong> waiting time excludes all candidate hospitals in your selected countries ({countries.join(', ')}).
+                </p>
+                <div className="pt-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const defaults = getProcedureFeasibilityDefaults(selectedProcedureId);
+                      setMaxBudget(defaults.max_budget);
+                      setMaxWait(defaults.max_waiting_time);
+                    }}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-teal-700 hover:bg-teal-800 text-white font-medium text-xs transition-all shadow-xs cursor-pointer"
+                  >
+                    <RotateCcw size={13} />
+                    <span>
+                      Relax to Recommended Limits (${getProcedureFeasibilityDefaults(selectedProcedureId).max_budget.toLocaleString()} USD, {getProcedureFeasibilityDefaults(selectedProcedureId).max_waiting_time}d)
+                    </span>
+                  </button>
+                </div>
               </div>
             ) : (
               <div className="p-3 rounded-xl bg-emerald-50/80 border border-emerald-200 text-emerald-800 text-xs flex items-center gap-2">

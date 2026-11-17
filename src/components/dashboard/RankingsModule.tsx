@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { useDSS } from '@/context/DSSContext';
+import React, { useState, useEffect } from 'react';
+import { useDSS, getProcedureFeasibilityDefaults } from '@/context/DSSContext';
 import {
   Download,
   AlertTriangle,
@@ -56,6 +56,13 @@ export const RankingsModule: React.FC<RankingsModuleProps> = ({
   const [filterWait, setFilterWait] = useState<number>(profile.max_waiting_time);
   const [filterQuality, setFilterQuality] = useState<number>(profile.min_quality);
   const selectedCountries = profile.countries;
+
+  // Sync quick filter controls with active profile updates
+  useEffect(() => {
+    setFilterBudget(profile.max_budget);
+    setFilterWait(profile.max_waiting_time);
+    setFilterQuality(profile.min_quality);
+  }, [profile]);
 
   const handleApplyQuickFilter = async () => {
     const updated = {
@@ -317,7 +324,7 @@ export const RankingsModule: React.FC<RankingsModuleProps> = ({
               <input
                 type="range"
                 min={5000}
-                max={50000}
+                max={75000}
                 step={1000}
                 value={filterBudget}
                 onChange={(e) => setFilterBudget(Number(e.target.value))}
@@ -331,7 +338,7 @@ export const RankingsModule: React.FC<RankingsModuleProps> = ({
               <input
                 type="range"
                 min={1}
-                max={20}
+                max={60}
                 step={1}
                 value={filterWait}
                 onChange={(e) => setFilterWait(Number(e.target.value))}
@@ -514,11 +521,34 @@ export const RankingsModule: React.FC<RankingsModuleProps> = ({
                 {rankedHospitals.length === 0 ? (
                   <tr>
                     <td colSpan={11} className="py-12 text-center text-slate-500 font-light text-sm">
-                      <div className="max-w-md mx-auto space-y-2">
-                        <p className="font-medium text-slate-700">No candidate hospitals match active feasibility filters.</p>
-                        <p className="text-xs text-slate-500">
-                          Please broaden your budget cap, waiting time threshold, minimum quality rating, or destination country selections.
+                      <div className="max-w-md mx-auto space-y-3">
+                        <p className="font-semibold text-slate-800">No candidate hospitals match active feasibility filters.</p>
+                        <p className="text-xs text-slate-500 font-light leading-relaxed">
+                          Active cap of <strong>${filterBudget.toLocaleString()} USD</strong> and <strong>{filterWait} days</strong> waiting time excludes candidate hospitals for <strong>{selectedProcedure?.display_label || selectedProcedureId}</strong>.
                         </p>
+                        <div>
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              const defaults = getProcedureFeasibilityDefaults(selectedProcedureId);
+                              setFilterBudget(defaults.max_budget);
+                              setFilterWait(defaults.max_waiting_time);
+                              const updated = {
+                                ...profile,
+                                max_budget: defaults.max_budget,
+                                max_waiting_time: defaults.max_waiting_time,
+                              };
+                              setProfile(updated);
+                              await refreshRankings(undefined, updated);
+                            }}
+                            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-teal-700 hover:bg-teal-800 text-white text-xs font-medium transition-all shadow-sm cursor-pointer mx-auto"
+                          >
+                            <RotateCcw size={14} />
+                            <span>
+                              Apply Recommended Limits (${getProcedureFeasibilityDefaults(selectedProcedureId).max_budget.toLocaleString()} USD, {getProcedureFeasibilityDefaults(selectedProcedureId).max_waiting_time}d)
+                            </span>
+                          </button>
+                        </div>
                       </div>
                     </td>
                   </tr>

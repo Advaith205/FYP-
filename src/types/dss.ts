@@ -22,6 +22,8 @@ export interface KneeProcedure {
   is_technique?: boolean;
   technique_guidance?: string | null;
   source_dataset?: string;
+  default_max_budget?: number;
+  default_max_waiting_time?: number;
 }
 
 export interface Hospital {

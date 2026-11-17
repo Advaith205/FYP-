@@ -29,6 +29,8 @@ from utils.data_loader import (
     SYNTHETIC_DATA_DISCLAIMER,
     INSUFFICIENT_DATA_NOTICE,
     EXPECTED_PROCEDURES,
+    PROCEDURE_FEASIBILITY_DEFAULTS,
+    get_procedure_feasibility_defaults,
 )
 from utils.ahp import (
     calculate_weights,
@@ -133,6 +135,7 @@ def get_metadata():
         "random_index_table": RANDOM_INDEX_TABLE,
         "total_hospitals": len(hospitals_meta_df),
         "total_procedures": len(knee_procedures_df),
+        "procedure_feasibility_defaults": PROCEDURE_FEASIBILITY_DEFAULTS,
         "procedures": procedure_summaries,
         "active_dataset_files": [
             "FYP_hospital_dataset.csv",
